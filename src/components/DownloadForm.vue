@@ -7,11 +7,15 @@
             type="text"
             id="m3u8-url"
             v-model="m3u8Url"
+            placeholder="输入视频地址"
             required
           />
       </div>
       <button type="submit" :disabled="isDownloading" @click="downloadVideo">点击下载</button>
-      <div v-if="isDownloading">正在下载，请稍候...</div>
+
+      <div v-if="isDownloading">
+        <p style="color: green;">{{ downloadProcess }}</p>
+      </div>
       <div v-if="downloadUrl">
         <p>下载完成！点击下面的链接下载视频:</p>
         <a :href="downloadUrl" target="_blank">下载视频</a>
@@ -24,25 +28,31 @@
   
   <script>
   import axios from 'axios';
-  
+  import config from '@/config.js';
+
   export default {
     data() {
       return {
         m3u8Url: '',
         downloadUrl: '',
         error: '',
-        isDownloading: false
-
+        isDownloading: false,
+        downloadProcess: '' //下载进度
       };
     },
     methods: {
       async downloadVideo() {
+        
+        if(!this.m3u8Url){
+          this.error = '请输入视频地址';
+          return;
+        }
         this.downloadUrl = '';
         this.error = '';
         this.isDownloading = true;
-
+        this.downloadProcess = '正在准备下载...';
         try {
-          const response = await fetch('http://81.70.95.136/vd/download', {
+          const response = await fetch(`${config.apiBaseUrl}/download`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -51,16 +61,37 @@
           });
           const data = await response.json();
           if (response.ok) {
-            this.downloadUrl = data.download_url;
+            let file_uuid = data.file_uuid;
+            var eventSource = new EventSource(`${config.apiBaseUrl}/stream/${file_uuid}`);
+            eventSource.addEventListener("progress",(event) => {
+                console.log(event.data);
+                this.isDownloading = true;
+                this.downloadProcess = event.data;
+            })
+            eventSource.addEventListener("success",(event) => {
+                console.log(event.data);
+                this.downloadUrl = event.data;
+                this.isDownloading = false;
+                eventSource.close();
+
+            })
+            eventSource.addEventListener("error",(event) => {
+                console.log(event.data);
+                this.error = event.data;
+                this.isDownloading = false;
+                eventSource.close();
+            })
+
+
           } else {
             this.error = data.error || '下载失败';
           }
         } catch (err) {
           this.error = '请求失败';
-        } finally {
           this.isDownloading = false;
-        }
-      }
+
+        } 
+      },
     }
   };
   </script>
